@@ -310,6 +310,10 @@ func (i *Issue) ValidateWithCustom(customStatuses, customTypes []string) error {
 			return fmt.Errorf("metadata must be valid JSON")
 		}
 	}
+	// Ephemeral and NoHistory are mutually exclusive (GH#2619)
+	if i.Ephemeral && i.NoHistory {
+		return fmt.Errorf("ephemeral and no_history are mutually exclusive")
+	}
 	return nil
 }
 
