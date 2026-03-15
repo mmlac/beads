@@ -203,6 +203,18 @@ func AllEphemeral(issues []*types.Issue) bool {
 	return true
 }
 
+// AllWisps returns true if every issue in the slice should be routed to the
+// wisps table (i.e., is ephemeral or no-history). Used to gate the fast path
+// that skips Dolt versioning in batch creates.
+func AllWisps(issues []*types.Issue) bool {
+	for _, issue := range issues {
+		if !issue.Ephemeral && !issue.NoHistory {
+			return false
+		}
+	}
+	return true
+}
+
 // CheckOrphan handles orphan detection for hierarchical IDs.
 // Returns (skip=true, nil) if the issue should be skipped.
 //

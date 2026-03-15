@@ -21,9 +21,9 @@ import (
 )
 
 // IsWisp returns true if the issue should be routed to the wisps table.
-// Matches the DoltStore check: issue.Ephemeral || ID contains "-wisp-".
+// Matches the DoltStore check: issue.Ephemeral || issue.NoHistory || ID contains "-wisp-".
 func IsWisp(issue *types.Issue) bool {
-	return issue.Ephemeral || strings.Contains(issue.ID, "-wisp-")
+	return issue.Ephemeral || issue.NoHistory || strings.Contains(issue.ID, "-wisp-")
 }
 
 // TableRouting returns the issue and event table names for an issue,

@@ -22,9 +22,10 @@ func (s *DoltStore) CreateIssue(ctx context.Context, issue *types.Issue, actor s
 	if issue == nil {
 		return fmt.Errorf("issue must not be nil")
 	}
-	// Route ephemeral issues and infra types to wisps table.
-	if issue.Ephemeral || s.IsInfraTypeCtx(ctx, issue.IssueType) {
-		issue.Ephemeral = true
+	// Route to wisps table if ephemeral, no-history, or infra type.
+	useWispsTable := issue.Ephemeral || issue.NoHistory || s.IsInfraTypeCtx(ctx, issue.IssueType)
+	if useWispsTable && !issue.NoHistory {
+		issue.Ephemeral = true // infra types get marked ephemeral (legacy behavior)
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -45,8 +46,8 @@ func (s *DoltStore) CreateIssue(ctx context.Context, issue *types.Issue, actor s
 		return err
 	}
 
-	// Dolt versioning — wisps are transient and skip DOLT_COMMIT.
-	if !issue.Ephemeral {
+	// Dolt versioning — wisps and no-history issues skip DOLT_COMMIT.
+	if !issue.Ephemeral && !issue.NoHistory {
 		// GH#2455: Stage only the tables we modified, then commit without -A
 		// to avoid sweeping up stale config changes from concurrent operations.
 		for _, table := range []string{"issues", "events"} {
@@ -79,10 +80,13 @@ func (s *DoltStore) CreateIssuesWithFullOptions(ctx context.Context, issues []*t
 		return nil
 	}
 
-	// All-ephemeral fast path: individual transactions, no Dolt versioning.
-	if issueops.AllEphemeral(issues) {
+	// All-wisps fast path: individual transactions, no Dolt versioning.
+	// Covers both ephemeral issues and no-history issues (both skip DOLT_COMMIT).
+	if issueops.AllWisps(issues) {
 		for _, issue := range issues {
-			issue.Ephemeral = true
+			if !issue.NoHistory {
+				issue.Ephemeral = true
+			}
 			tx, err := s.db.BeginTx(ctx, nil)
 			if err != nil {
 				return fmt.Errorf("failed to begin transaction: %w", err)
