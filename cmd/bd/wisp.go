@@ -75,6 +75,8 @@ type WispListItem struct {
 	Title     string    `json:"title"`
 	Status    string    `json:"status"`
 	Priority  int       `json:"priority"`
+	Type      string    `json:"type"`
+	Labels    []string  `json:"labels,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Old       bool      `json:"old,omitempty"` // Not updated in 24+ hours
@@ -400,6 +402,8 @@ func runWispList(cmd *cobra.Command, args []string) {
 			Title:     issue.Title,
 			Status:    string(issue.Status),
 			Priority:  issue.Priority,
+			Type:      string(issue.IssueType),
+			Labels:    issue.Labels,
 			CreatedAt: issue.CreatedAt,
 			UpdatedAt: issue.UpdatedAt,
 		}
@@ -438,8 +442,8 @@ func runWispList(cmd *cobra.Command, args []string) {
 	fmt.Printf("Wisps (%d):\n\n", len(items))
 
 	// Print header
-	fmt.Printf("%-12s %-10s %-4s %-46s %s\n",
-		"ID", "STATUS", "PRI", "TITLE", "UPDATED")
+	fmt.Printf("%-12s %-10s %-4s %-10s %-36s %s\n",
+		"ID", "STATUS", "PRI", "TYPE", "TITLE", "UPDATED")
 	fmt.Println(strings.Repeat("-", 90))
 
 	for _, item := range items {
@@ -458,8 +462,8 @@ func runWispList(cmd *cobra.Command, args []string) {
 			updated = ui.RenderWarn(updated + " ⚠")
 		}
 
-		fmt.Printf("%-12s %-10s P%-3d %-46s %s\n",
-			item.ID, status, item.Priority, title, updated)
+		fmt.Printf("%-12s %-10s P%-3d %-10s %-36s %s\n",
+			item.ID, status, item.Priority, item.Type, title, updated)
 	}
 
 	// Print warnings
