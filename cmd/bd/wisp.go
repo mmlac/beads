@@ -528,13 +528,15 @@ Note: This uses time-based cleanup, appropriate for ephemeral wisps.
 For graph-pressure staleness detection (blocking other work), see 'bd mol stale'.
 
 Examples:
-  bd mol wisp gc                       # Clean abandoned wisps (default: 1h threshold)
-  bd mol wisp gc --dry-run             # Preview what would be cleaned
-  bd mol wisp gc --age 24h             # Custom age threshold
-  bd mol wisp gc --all                 # Also clean closed wisps older than threshold
-  bd mol wisp gc --closed              # Preview closed wisp deletion
-  bd mol wisp gc --closed --force      # Delete all closed wisps
-  bd mol wisp gc --closed --dry-run    # Explicit dry-run (same as no --force)`,
+  bd mol wisp gc                                    # Clean abandoned wisps (default: 1h threshold)
+  bd mol wisp gc --dry-run                          # Preview what would be cleaned
+  bd mol wisp gc --age 24h                          # Custom age threshold
+  bd mol wisp gc --all                              # Also clean closed wisps older than threshold
+  bd mol wisp gc --closed                           # Preview closed wisp deletion
+  bd mol wisp gc --closed --force                   # Delete all closed wisps
+  bd mol wisp gc --closed --dry-run                 # Explicit dry-run (same as no --force)
+  bd mol wisp gc --exclude-type agent,rig           # Protect agent and rig wisps from GC
+  bd mol wisp gc --closed --force --exclude-type mol # Delete closed wisps except mol type`,
 	Run: runWispGC,
 }
 
@@ -556,6 +558,7 @@ func runWispGC(cmd *cobra.Command, args []string) {
 	cleanAll, _ := cmd.Flags().GetBool("all")
 	closedMode, _ := cmd.Flags().GetBool("closed")
 	force, _ := cmd.Flags().GetBool("force")
+	excludeTypeStrs, _ := cmd.Flags().GetStringSlice("exclude-type")
 
 	// Parse age threshold
 	ageThreshold := time.Hour // Default 1 hour
@@ -572,17 +575,24 @@ func runWispGC(cmd *cobra.Command, args []string) {
 		FatalErrorWithHint("no database connection", "check 'bd doctor' and 'bd dolt status' for configuration issues")
 	}
 
+	// Convert string slice to []types.IssueType
+	var excludeTypes []types.IssueType
+	for _, t := range excludeTypeStrs {
+		excludeTypes = append(excludeTypes, types.IssueType(t))
+	}
+
 	// --closed mode: purge all closed wisps (batch deletion)
 	if closedMode {
-		runWispPurgeClosed(ctx, dryRun, force)
+		runWispPurgeClosed(ctx, dryRun, force, excludeTypes)
 		return
 	}
 
 	// Query wisps from main database using Ephemeral filter
 	ephemeralFlag := true
 	filter := types.IssueFilter{
-		Ephemeral: &ephemeralFlag,
-		Limit:     5000,
+		Ephemeral:    &ephemeralFlag,
+		ExcludeTypes: excludeTypes,
+		Limit:        5000,
 	}
 	issues, err := store.SearchIssues(ctx, "", filter)
 	if err != nil {
@@ -694,14 +704,15 @@ func runWispGC(cmd *cobra.Command, args []string) {
 
 // runWispPurgeClosed deletes all closed wisps using batch deletion.
 // Safe by default: preview-only without --force.
-func runWispPurgeClosed(ctx context.Context, dryRun bool, force bool) {
+func runWispPurgeClosed(ctx context.Context, dryRun bool, force bool, excludeTypes []types.IssueType) {
 	// Query closed ephemeral issues
 	statusClosed := types.StatusClosed
 	ephemeralTrue := true
 	filter := types.IssueFilter{
-		Status:    &statusClosed,
-		Ephemeral: &ephemeralTrue,
-		Limit:     5000,
+		Status:       &statusClosed,
+		Ephemeral:    &ephemeralTrue,
+		ExcludeTypes: excludeTypes,
+		Limit:        5000,
 	}
 
 	closedIssues, err := store.SearchIssues(ctx, "", filter)
@@ -800,6 +811,7 @@ func init() {
 	wispGCCmd.Flags().Bool("all", false, "Also clean closed wisps older than threshold")
 	wispGCCmd.Flags().Bool("closed", false, "Delete all closed wisps (ignores --age threshold)")
 	wispGCCmd.Flags().BoolP("force", "f", false, "Actually delete (default: preview only)")
+	wispGCCmd.Flags().StringSlice("exclude-type", nil, "Exclude wisps of these types from GC (comma-separated, e.g., agent,rig)")
 
 	wispCmd.AddCommand(wispCreateCmd)
 	wispCmd.AddCommand(wispListCmd)
