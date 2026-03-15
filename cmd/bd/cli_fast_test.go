@@ -1324,3 +1324,51 @@ func TestCLI_CreateRejectsFlagLikeTitles(t *testing.T) {
 		}
 	})
 }
+
+// TestCLI_CreateNoHistory verifies that the --no-history flag is correctly wired
+// from the CLI create command to the resulting issue. This is the e2e test
+// complementing the storage-layer TestWispGC_SkipsNoHistoryBeads (be-07g).
+func TestCLI_CreateNoHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow CLI test in short mode")
+	}
+	tmpDir := setupCLITestDB(t)
+
+	// Create a bead with --no-history and capture JSON output
+	out := runBDInProcess(t, tmpDir, "create", "No-history agent bead", "-p", "2", "--no-history", "--json")
+
+	// Extract JSON (may have warnings before it)
+	jsonStart := strings.Index(out, "{")
+	if jsonStart == -1 {
+		t.Fatalf("No JSON found in create output: %s", out)
+	}
+	jsonOut := out[jsonStart:]
+
+	var created map[string]interface{}
+	if err := json.Unmarshal([]byte(jsonOut), &created); err != nil {
+		t.Fatalf("Failed to parse create JSON: %v\nOutput: %s", err, out)
+	}
+
+	// Verify no_history flag is set on the created issue
+	if created["no_history"] != true {
+		t.Errorf("Expected no_history=true in created issue, got: %v", created["no_history"])
+	}
+
+	id, _ := created["id"].(string)
+	if id == "" {
+		t.Fatalf("No id in create output: %v", created)
+	}
+
+	// Verify by retrieving the issue via show --json
+	showOut := runBDInProcess(t, tmpDir, "show", id, "--json")
+	var issues []map[string]interface{}
+	if err := json.Unmarshal([]byte(showOut), &issues); err != nil {
+		t.Fatalf("Failed to parse show JSON: %v\nOutput: %s", err, showOut)
+	}
+	if len(issues) == 0 {
+		t.Fatal("show returned no issues")
+	}
+	if issues[0]["no_history"] != true {
+		t.Errorf("Expected no_history=true in retrieved issue, got: %v", issues[0]["no_history"])
+	}
+}

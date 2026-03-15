@@ -516,3 +516,126 @@ func TestFindWispDependentsRecursive_NoDependents(t *testing.T) {
 		t.Errorf("expected 0 dependents, got %d: %v", len(discovered), discovered)
 	}
 }
+
+// TestWispGC_ExcludeType verifies that the ExcludeTypes filter prevents wisps
+// of protected types from being returned by the GC query. This is the
+// storage-layer test for the --exclude-type flag wired in runWispGC (be-07g).
+func TestWispGC_ExcludeType(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	// Create a wisp of a type that should be excluded from GC.
+	protectedWisp := &types.Issue{
+		Title:     "protected chore wisp",
+		Status:    types.StatusOpen,
+		Priority:  2,
+		IssueType: types.TypeChore,
+		Ephemeral: true,
+	}
+	if err := store.CreateIssue(ctx, protectedWisp, "test"); err != nil {
+		t.Fatalf("create protected wisp: %v", err)
+	}
+
+	// Create a wisp of a type that is NOT excluded — should be visible to GC.
+	gcEligibleWisp := &types.Issue{
+		Title:     "gc-eligible task wisp",
+		Status:    types.StatusOpen,
+		Priority:  2,
+		IssueType: types.TypeTask,
+		Ephemeral: true,
+	}
+	if err := store.CreateIssue(ctx, gcEligibleWisp, "test"); err != nil {
+		t.Fatalf("create gc-eligible wisp: %v", err)
+	}
+
+	// Query with ExcludeTypes=chore — the filter used when --exclude-type=chore is passed.
+	ephemeralTrue := true
+	filter := types.IssueFilter{
+		Ephemeral:    &ephemeralTrue,
+		ExcludeTypes: []types.IssueType{types.TypeChore},
+		Limit:        5000,
+	}
+	issues, err := store.SearchIssues(ctx, "", filter)
+	if err != nil {
+		t.Fatalf("SearchIssues with ExcludeTypes: %v", err)
+	}
+
+	found := make(map[string]bool, len(issues))
+	for _, iss := range issues {
+		found[iss.ID] = true
+	}
+
+	// Protected wisp (chore) must NOT appear in GC query results.
+	if found[protectedWisp.ID] {
+		t.Errorf("--exclude-type violation: chore wisp %s should be excluded from GC query", protectedWisp.ID)
+	}
+
+	// GC-eligible wisp (task) MUST appear.
+	if !found[gcEligibleWisp.ID] {
+		t.Errorf("sanity: task wisp %s should appear in GC query when chore is excluded", gcEligibleWisp.ID)
+	}
+}
+
+// TestWispList_TypeFilter verifies that the IssueType filter correctly limits
+// wisp list results to the requested type. This is the storage-layer test for
+// the --type flag wired in runWispList (be-07g).
+func TestWispList_TypeFilter(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	ctx, cancel := testContext(t)
+	defer cancel()
+
+	// Create wisps of two different types.
+	taskWisp := &types.Issue{
+		Title:     "task-type wisp",
+		Status:    types.StatusOpen,
+		Priority:  2,
+		IssueType: types.TypeTask,
+		Ephemeral: true,
+	}
+	bugWisp := &types.Issue{
+		Title:     "bug-type wisp",
+		Status:    types.StatusOpen,
+		Priority:  2,
+		IssueType: types.TypeBug,
+		Ephemeral: true,
+	}
+	if err := store.CreateIssue(ctx, taskWisp, "test"); err != nil {
+		t.Fatalf("create task wisp: %v", err)
+	}
+	if err := store.CreateIssue(ctx, bugWisp, "test"); err != nil {
+		t.Fatalf("create bug wisp: %v", err)
+	}
+
+	// Query with IssueType=task — the filter set when --type=task is passed.
+	ephemeralTrue := true
+	taskType := types.TypeTask
+	filter := types.IssueFilter{
+		Ephemeral: &ephemeralTrue,
+		IssueType: &taskType,
+		Limit:     5000,
+	}
+	issues, err := store.SearchIssues(ctx, "", filter)
+	if err != nil {
+		t.Fatalf("SearchIssues with IssueType filter: %v", err)
+	}
+
+	found := make(map[string]bool, len(issues))
+	for _, iss := range issues {
+		found[iss.ID] = true
+	}
+
+	// Task wisp must appear in filtered results.
+	if !found[taskWisp.ID] {
+		t.Errorf("task wisp %s should appear when filtering by type=task", taskWisp.ID)
+	}
+
+	// Bug wisp must NOT appear in filtered results.
+	if found[bugWisp.ID] {
+		t.Errorf("bug wisp %s should not appear when filtering by type=task", bugWisp.ID)
+	}
+}
