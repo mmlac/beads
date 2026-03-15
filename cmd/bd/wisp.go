@@ -355,6 +355,7 @@ func runWispList(cmd *cobra.Command, args []string) {
 	ctx := rootCtx
 
 	showAll, _ := cmd.Flags().GetBool("all")
+	typeFilter, _ := cmd.Flags().GetString("type")
 
 	// Check for database connection
 	if store == nil {
@@ -374,6 +375,10 @@ func runWispList(cmd *cobra.Command, args []string) {
 	filter := types.IssueFilter{
 		Ephemeral: &ephemeralFlag,
 		Limit:     5000,
+	}
+	if typeFilter != "" {
+		it := types.IssueType(typeFilter)
+		filter.IssueType = &it
 	}
 	issues, err := store.SearchIssues(ctx, "", filter)
 	if err != nil {
@@ -788,6 +793,7 @@ func init() {
 	wispCreateCmd.Flags().Bool("root-only", false, "Create only the root issue (no child step issues)")
 
 	wispListCmd.Flags().Bool("all", false, "Include closed wisps")
+	wispListCmd.Flags().String("type", "", "Filter by issue type (e.g., agent, task, patrol)")
 
 	wispGCCmd.Flags().Bool("dry-run", false, "Preview what would be cleaned")
 	wispGCCmd.Flags().String("age", "1h", "Age threshold for abandoned wisp detection")
